@@ -47,7 +47,7 @@ var (
 // getBaseImage returns a function that determines the base image for a given import path.
 // If the `bo.BaseImage` parameter is non-empty, it overrides base image configuration from `.ko.yaml`.
 func getBaseImage(platform string, bo *options.BuildOptions) build.GetBase {
-	return func(ctx context.Context, s string) (build.Result, error) {
+	return func(ctx context.Context, s string) (name.Reference, build.Result, error) {
 		s = strings.TrimPrefix(s, build.StrictScheme)
 		// Viper configuration file keys are case insensitive, and are
 		// returned as all lowercase.  This means that import paths with
@@ -68,12 +68,13 @@ func getBaseImage(platform string, bo *options.BuildOptions) build.GetBase {
 		}
 		ref, err := name.ParseReference(baseImage, nameOpts...)
 		if err != nil {
-			return nil, fmt.Errorf("parsing base image (%q): %v", baseImage, err)
+			return nil, nil, fmt.Errorf("parsing base image (%q): %v", baseImage, err)
 		}
 
 		// For ko.local, look in the daemon.
 		if ref.Context().RegistryStr() == publish.LocalDomain {
-			return daemon.Image(ref)
+			img, err := daemon.Image(ref)
+			return ref, img, err
 		}
 
 		userAgent := ua()
@@ -105,7 +106,7 @@ func getBaseImage(platform string, bo *options.BuildOptions) build.GetBase {
 				p.Variant = parts[2]
 			}
 			if len(parts) > 3 {
-				return nil, fmt.Errorf("too many slashes in platform spec: %s", platform)
+				return nil, nil, fmt.Errorf("too many slashes in platform spec: %s", platform)
 			}
 			ropt = append(ropt, remote.WithPlatform(p))
 		}
@@ -113,16 +114,19 @@ func getBaseImage(platform string, bo *options.BuildOptions) build.GetBase {
 		log.Printf("Using base %s for %s", ref, s)
 		desc, err := remote.Get(ref, ropt...)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		switch desc.MediaType {
 		case types.OCIImageIndex, types.DockerManifestList:
 			if multiplatform {
-				return desc.ImageIndex()
+				idx, err := desc.ImageIndex()
+				return ref, idx, err
 			}
-			return desc.Image()
+			img, err := desc.Image()
+			return ref, img, err
 		default:
-			return desc.Image()
+			img, err := desc.Image()
+			return ref, img, err
 		}
 	}
 }

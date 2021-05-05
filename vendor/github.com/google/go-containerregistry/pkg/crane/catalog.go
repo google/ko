@@ -29,5 +29,7 @@ func Catalog(src string, opt ...Option) (res []string, err error) {
 		return nil, err
 	}
 
-	return remote.Catalog(context.TODO(), reg, o.remote...)
+	// This context gets overridden by remote.WithContext, which is set by
+	// crane.WithContext.
+	return remote.Catalog(context.Background(), reg, o.remote...)
 }

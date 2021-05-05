@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package gzip provides helper functions for interacting with gzipped streams.
 package gzip
 
 import (
@@ -72,7 +73,7 @@ func ReadCloserLevel(r io.ReadCloser, level int) io.ReadCloser {
 			return pw.CloseWithError(err)
 		}
 
-		// We dont' really care if these fail.
+		// We don't really care if these fail.
 		defer pw.Close()
 		defer r.Close()
 

@@ -22,7 +22,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/google/go-containerregistry/internal/verify"
@@ -330,13 +329,9 @@ func (f *fetcher) headManifest(ref name.Reference, acceptable []types.MediaType)
 	}
 	mediaType := types.MediaType(mth)
 
-	lh := resp.Header.Get("Content-Length")
-	if lh == "" {
-		return nil, fmt.Errorf("HEAD %s: response did not include Content-Length header", u.String())
-	}
-	size, err := strconv.ParseInt(lh, 10, 64)
-	if err != nil {
-		return nil, err
+	size := resp.ContentLength
+	if size == -1 {
+		return nil, fmt.Errorf("GET %s: response did not include Content-Length header", u.String())
 	}
 
 	dh := resp.Header.Get("Docker-Content-Digest")
@@ -380,7 +375,13 @@ func (f *fetcher) fetchBlob(ctx context.Context, h v1.Hash) (io.ReadCloser, erro
 		return nil, err
 	}
 
-	return verify.ReadCloser(resp.Body, h)
+	// Verify up to the content-length header value.
+	size := resp.ContentLength
+	if size == -1 {
+		return nil, fmt.Errorf("GET %s: response did not include Content-Length header", u.String())
+	}
+
+	return verify.ReadCloser(resp.Body, size, h)
 }
 
 func (f *fetcher) headBlob(h v1.Hash) (*http.Response, error) {
@@ -401,4 +402,24 @@ func (f *fetcher) headBlob(h v1.Hash) (*http.Response, error) {
 	}
 
 	return resp, nil
+}
+
+func (f *fetcher) blobExists(h v1.Hash) (bool, error) {
+	u := f.url("blobs", h.String())
+	req, err := http.NewRequest(http.MethodHead, u.String(), nil)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := f.Client.Do(req.WithContext(f.context))
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	if err := transport.CheckError(resp, http.StatusOK, http.StatusNotFound); err != nil {
+		return false, err
+	}
+
+	return resp.StatusCode == http.StatusOK, nil
 }

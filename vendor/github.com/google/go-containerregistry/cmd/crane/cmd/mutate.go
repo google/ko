@@ -30,6 +30,7 @@ func NewCmdMutate(options *[]crane.Option) *cobra.Command {
 	var lbls []string
 	var entrypoint string
 	var newRef string
+	var anntns []string
 
 	mutateCmd := &cobra.Command{
 		Use:   "mutate",
@@ -38,6 +39,17 @@ func NewCmdMutate(options *[]crane.Option) *cobra.Command {
 		Run: func(_ *cobra.Command, args []string) {
 			// Pull image and get config.
 			ref := args[0]
+
+			if len(anntns) != 0 {
+				desc, err := crane.Head(ref, *options...)
+				if err != nil {
+					log.Fatalf("checking %s: %v", ref, err)
+				}
+				if desc.MediaType.IsIndex() {
+					log.Fatalf("mutating annotations on an index is not yet supported")
+				}
+			}
+
 			img, err := crane.Pull(ref, *options...)
 			if err != nil {
 				log.Fatalf("pulling %s: %v", ref, err)
@@ -52,16 +64,19 @@ func NewCmdMutate(options *[]crane.Option) *cobra.Command {
 			if cfg.Config.Labels == nil {
 				cfg.Config.Labels = map[string]string{}
 			}
-			labels := map[string]string{}
-			for _, l := range lbls {
-				parts := strings.SplitN(l, "=", 2)
-				if len(parts) == 1 {
-					log.Fatalf("parsing label %q, not enough parts", l)
-				}
-				labels[parts[0]] = parts[1]
+
+			labels, err := splitKeyVals(lbls)
+			if err != nil {
+				log.Fatal(err)
 			}
+
 			for k, v := range labels {
 				cfg.Config.Labels[k] = v
+			}
+
+			annotations, err := splitKeyVals(anntns)
+			if err != nil {
+				log.Fatal(err)
 			}
 
 			// Set entrypoint.
@@ -74,6 +89,12 @@ func NewCmdMutate(options *[]crane.Option) *cobra.Command {
 			img, err = mutate.Config(img, cfg.Config)
 			if err != nil {
 				log.Fatalf("mutating config: %v", err)
+			}
+
+			// Mutate and write image.
+			img, err = mutate.Annotations(img, annotations)
+			if err != nil {
+				log.Fatalf("mutating annotations: %v", err)
 			}
 
 			// If the new ref isn't provided, write over the original image.
@@ -100,8 +121,22 @@ func NewCmdMutate(options *[]crane.Option) *cobra.Command {
 			fmt.Println(r.Context().Digest(digest.String()))
 		},
 	}
+	mutateCmd.Flags().StringSliceVarP(&anntns, "annotation", "a", nil, "New annotations to add")
 	mutateCmd.Flags().StringSliceVarP(&lbls, "label", "l", nil, "New labels to add")
 	mutateCmd.Flags().StringVar(&entrypoint, "entrypoint", "", "New entrypoing to set")
 	mutateCmd.Flags().StringVarP(&newRef, "tag", "t", "", "New tag to apply to mutated image. If not provided, push by digest to the original image repository.")
 	return mutateCmd
+}
+
+// splitKeyVals splits key value pairs which is in form hello=world
+func splitKeyVals(kvPairs []string) (map[string]string, error) {
+	m := map[string]string{}
+	for _, l := range kvPairs {
+		parts := strings.SplitN(l, "=", 2)
+		if len(parts) == 1 {
+			return nil, fmt.Errorf("parsing label %q, not enough parts", l)
+		}
+		m[parts[0]] = parts[1]
+	}
+	return m, nil
 }

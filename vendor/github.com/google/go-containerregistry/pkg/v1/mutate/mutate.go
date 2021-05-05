@@ -113,6 +113,16 @@ func Config(base v1.Image, cfg v1.Config) (v1.Image, error) {
 	return ConfigFile(base, cf)
 }
 
+// Annotations mutates the provided v1.Image to have the provided annotations
+func Annotations(base v1.Image, annotations map[string]string) (v1.Image, error) {
+	image := &image{
+		base:        base,
+		annotations: annotations,
+	}
+
+	return image, nil
+}
+
 // ConfigFile mutates the provided v1.Image to have the provided v1.ConfigFile
 func ConfigFile(base v1.Image, cfg *v1.ConfigFile) (v1.Image, error) {
 	m, err := base.Manifest()

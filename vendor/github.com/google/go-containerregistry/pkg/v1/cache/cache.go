@@ -77,7 +77,7 @@ func (l *lazyLayer) Compressed() (io.ReadCloser, error) {
 		// Layer found in the cache.
 		logs.Progress.Printf("Layer %s found (compressed) in cache", digest)
 		return cl.Compressed()
-	} else if err != nil && err != ErrNotFound {
+	} else if err != ErrNotFound {
 		return nil, err
 	}
 
@@ -99,7 +99,7 @@ func (l *lazyLayer) Uncompressed() (io.ReadCloser, error) {
 		// Layer found in the cache.
 		logs.Progress.Printf("Layer %s found (uncompressed) in cache", diffID)
 		return cl.Uncompressed()
-	} else if err != nil && err != ErrNotFound {
+	} else if err != ErrNotFound {
 		return nil, err
 	}
 

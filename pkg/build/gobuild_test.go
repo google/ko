@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -110,7 +111,7 @@ func TestGoBuildQualifyImport(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
-			ng, err := NewGo(context.Background(), test.dir, WithBaseImages(func(context.Context, string) (Result, error) { return base, nil }))
+			ng, err := NewGo(context.Background(), test.dir, WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return nil, base, nil }))
 			if err != nil {
 				t.Fatalf("NewGo() = %v", err)
 			}
@@ -131,13 +132,15 @@ func TestGoBuildQualifyImport(t *testing.T) {
 	}
 }
 
+var baseRef = name.MustParseReference("all.your/base")
+
 func TestGoBuildIsSupportedRef(t *testing.T) {
 	base, err := random.Image(1024, 3)
 	if err != nil {
 		t.Fatalf("random.Image() = %v", err)
 	}
 
-	ng, err := NewGo(context.Background(), "", WithBaseImages(func(context.Context, string) (Result, error) { return base, nil }))
+	ng, err := NewGo(context.Background(), "", WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return nil, base, nil }))
 	if err != nil {
 		t.Fatalf("NewGo() = %v", err)
 	}
@@ -186,7 +189,7 @@ func TestGoBuildIsSupportedRefWithModules(t *testing.T) {
 	}
 
 	opts := []Option{
-		WithBaseImages(func(context.Context, string) (Result, error) { return base, nil }),
+		WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return baseRef, base, nil }),
 		withModuleInfo(mods),
 		withBuildContext(stubBuildContext{
 			// make all referenced deps commands
@@ -259,7 +262,7 @@ func TestGoBuildNoKoData(t *testing.T) {
 		context.Background(),
 		"",
 		WithCreationTime(creationTime),
-		WithBaseImages(func(context.Context, string) (Result, error) { return base, nil }),
+		WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return baseRef, base, nil }),
 		withBuilder(writeTempFile),
 	)
 	if err != nil {
@@ -477,6 +480,21 @@ func validateImage(t *testing.T, img v1.Image, baseLayers int64, creationTime v1
 			t.Errorf("created = %v, want %v", actual, creationTime)
 		}
 	})
+
+	t.Run("check annotations", func(t *testing.T) {
+		mf, err := img.Manifest()
+		if err != nil {
+			t.Fatalf("Manifest() = %v", err)
+		}
+		t.Logf("Got annotations: %v", mf.Annotations)
+		if _, found := mf.Annotations[baseDigestAnnotation]; !found {
+			t.Errorf("image annotations did not contain base image digest")
+		}
+		want := baseRef.Name()
+		if got := mf.Annotations[baseRefAnnotation]; got != want {
+			t.Errorf("base image ref; got %q, want %q", got, want)
+		}
+	})
 }
 
 type stubBuildContext map[string]*gb.Package
@@ -502,7 +520,7 @@ func TestGoBuild(t *testing.T) {
 		context.Background(),
 		"",
 		WithCreationTime(creationTime),
-		WithBaseImages(func(context.Context, string) (Result, error) { return base, nil }),
+		WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return baseRef, base, nil }),
 		withBuilder(writeTempFile),
 		WithLabel("foo", "bar"),
 		WithLabel("hello", "world"),
@@ -575,7 +593,7 @@ func TestGoBuildIndex(t *testing.T) {
 		context.Background(),
 		"",
 		WithCreationTime(creationTime),
-		WithBaseImages(func(context.Context, string) (Result, error) { return base, nil }),
+		WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return baseRef, base, nil }),
 		WithPlatforms("all"),
 		withBuilder(writeTempFile),
 	)
@@ -648,7 +666,7 @@ func TestNestedIndex(t *testing.T) {
 		context.Background(),
 		"",
 		WithCreationTime(creationTime),
-		WithBaseImages(func(context.Context, string) (Result, error) { return nestedBase, nil }),
+		WithBaseImages(func(context.Context, string) (name.Reference, Result, error) { return baseRef, nestedBase, nil }),
 		withBuilder(writeTempFile),
 	)
 	if err != nil {

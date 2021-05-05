@@ -30,12 +30,13 @@ type image struct {
 	base v1.Image
 	adds []Addendum
 
-	computed   bool
-	configFile *v1.ConfigFile
-	manifest   *v1.Manifest
-	mediaType  *types.MediaType
-	diffIDMap  map[v1.Hash]v1.Layer
-	digestMap  map[v1.Hash]v1.Layer
+	computed    bool
+	configFile  *v1.ConfigFile
+	manifest    *v1.Manifest
+	annotations map[string]string
+	mediaType   *types.MediaType
+	diffIDMap   map[v1.Hash]v1.Layer
+	digestMap   map[v1.Hash]v1.Layer
 }
 
 var _ v1.Image = (*image)(nil)
@@ -136,6 +137,16 @@ func (i *image) compute() error {
 			manifest.MediaType = ""
 		} else if strings.Contains(string(*i.mediaType), types.DockerVendorPrefix) {
 			manifest.MediaType = *i.mediaType
+		}
+	}
+
+	if i.annotations != nil {
+		if manifest.Annotations == nil {
+			manifest.Annotations = map[string]string{}
+		}
+
+		for k, v := range i.annotations {
+			manifest.Annotations[k] = v
 		}
 	}
 

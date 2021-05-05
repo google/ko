@@ -15,6 +15,7 @@
 package crane
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/google/go-containerregistry/pkg/authn"
@@ -95,5 +96,12 @@ func WithAuth(auth authn.Authenticator) Option {
 func WithUserAgent(ua string) Option {
 	return func(o *options) {
 		o.remote = append(o.remote, remote.WithUserAgent(ua))
+	}
+}
+
+// WithContext is a functional option for setting the context.
+func WithContext(ctx context.Context) Option {
+	return func(o *options) {
+		o.remote = append(o.remote, remote.WithContext(ctx))
 	}
 }

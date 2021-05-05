@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"github.com/containerd/stargz-snapshotter/estargz"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
@@ -64,8 +65,13 @@ For more information see:
 `
 )
 
-// GetBase takes an importpath and returns a base image.
-type GetBase func(context.Context, string) (Result, error)
+const (
+	baseDigestAnnotation = "org.opencontainers.image.base.digest"
+	baseRefAnnotation    = "org.opencontainers.image.base.ref.name"
+)
+
+// GetBase takes an importpath and returns a base image reference and base image (or index).
+type GetBase func(context.Context, string) (name.Reference, Result, error)
 
 type builder func(context.Context, string, string, v1.Platform, bool) (string, error)
 
@@ -578,8 +584,8 @@ func (g *gobuild) tarKoData(ref reference) (*bytes.Buffer, error) {
 	return buf, walkRecursive(tw, root, kodataRoot, creationTime)
 }
 
-func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platform *v1.Platform) (v1.Image, error) {
-	ref := newRef(s)
+func (g *gobuild) buildOne(ctx context.Context, refStr string, baseRef name.Reference, base v1.Image, platform *v1.Platform) (v1.Image, error) {
+	ref := newRef(refStr)
 
 	cf, err := base.ConfigFile()
 	if err != nil {
@@ -654,6 +660,21 @@ func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platfor
 		return nil, err
 	}
 
+	baseDigest, err := base.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	m := map[string]string{
+		baseRefAnnotation:    baseRef.Name(),
+		baseDigestAnnotation: baseDigest.String(),
+	}
+	log.Println("DEBUGGING ANNOTATIONS:", m) // TODO remove
+	withApp, err = mutate.Annotations(withApp, m)
+	if err != nil {
+		return nil, err
+	}
+
 	// Start from a copy of the base image's config file, and set
 	// the entrypoint to our app.
 	cfg, err := withApp.ConfigFile()
@@ -710,7 +731,7 @@ func updatePath(cf *v1.ConfigFile) {
 // Build implements build.Interface
 func (g *gobuild) Build(ctx context.Context, s string) (Result, error) {
 	// Determine the appropriate base image for this import path.
-	base, err := g.getBase(ctx, s)
+	baseRef, base, err := g.getBase(ctx, s)
 	if err != nil {
 		return nil, err
 	}
@@ -727,20 +748,20 @@ func (g *gobuild) Build(ctx context.Context, s string) (Result, error) {
 		if !ok {
 			return nil, fmt.Errorf("failed to interpret base as index: %v", base)
 		}
-		return g.buildAll(ctx, s, base)
+		return g.buildAll(ctx, s, baseRef, base)
 	case types.OCIManifestSchema1, types.DockerManifestSchema2:
 		base, ok := base.(v1.Image)
 		if !ok {
 			return nil, fmt.Errorf("failed to interpret base as image: %v", base)
 		}
-		return g.buildOne(ctx, s, base, nil)
+		return g.buildOne(ctx, s, baseRef, base, nil)
 	default:
 		return nil, fmt.Errorf("base image media type: %s", mt)
 	}
 }
 
 // TODO(#192): Do these in parallel?
-func (g *gobuild) buildAll(ctx context.Context, s string, base v1.ImageIndex) (v1.ImageIndex, error) {
+func (g *gobuild) buildAll(ctx context.Context, ref string, baseRef name.Reference, base v1.ImageIndex) (v1.ImageIndex, error) {
 	im, err := base.IndexManifest()
 	if err != nil {
 		return nil, err
@@ -751,7 +772,7 @@ func (g *gobuild) buildAll(ctx context.Context, s string, base v1.ImageIndex) (v
 	for _, desc := range im.Manifests {
 		// Nested index is pretty rare. We could support this in theory, but return an error for now.
 		if desc.MediaType != types.OCIManifestSchema1 && desc.MediaType != types.DockerManifestSchema2 {
-			return nil, fmt.Errorf("%q has unexpected mediaType %q in base for %q", desc.Digest, desc.MediaType, s)
+			return nil, fmt.Errorf("%q has unexpected mediaType %q in base for %q", desc.Digest, desc.MediaType, ref)
 		}
 
 		if !g.platformMatcher.matches(desc.Platform) {
@@ -762,7 +783,7 @@ func (g *gobuild) buildAll(ctx context.Context, s string, base v1.ImageIndex) (v
 		if err != nil {
 			return nil, err
 		}
-		img, err := g.buildOne(ctx, s, base, desc.Platform)
+		img, err := g.buildOne(ctx, ref, baseRef, base, desc.Platform)
 		if err != nil {
 			return nil, err
 		}

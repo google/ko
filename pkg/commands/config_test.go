@@ -31,7 +31,7 @@ func TestOverrideDefaultBaseImageUsingBuildOption(t *testing.T) {
 	}
 
 	baseFn := getBaseImage("all", bo)
-	res, err := baseFn(context.Background(), "ko://example.com/helloworld")
+	_, res, err := baseFn(context.Background(), "ko://example.com/helloworld")
 	if err != nil {
 		t.Fatalf("getBaseImage(): %v", err)
 	}
