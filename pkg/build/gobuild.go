@@ -44,7 +44,6 @@ import (
 )
 
 const (
-	appDir             = "/ko-app"
 	defaultAppFilename = "ko-app"
 
 	gorootWarningTemplate = `NOTICE!
@@ -163,7 +162,6 @@ func moduleInfo(ctx context.Context, dir string) (*modules, error) {
 
 	for {
 		var info modInfo
-
 		err := dec.Decode(&info)
 		if err == io.EOF {
 			// all done
@@ -417,40 +415,42 @@ func appFilename(importpath string) string {
 	return base
 }
 
-func tarAddDirectories(tw *tar.Writer, dir string, creationTime v1.Time) error {
-	if dir == "." || dir == string(filepath.Separator) {
-		return nil
-	}
+// userOwnerAndGroupSID is a magic value needed to make the binary executable
+// in a Windows container.
+//
+// owner: BUILTIN/Users group: BUILTIN/Users ($sddlValue="O:BUG:BU")
+const userOwnerAndGroupSID = "AQAAgBQAAAAkAAAAAAAAAAAAAAABAgAAAAAABSAAAAAhAgAAAQIAAAAAAAUgAAAAIQIAAA=="
 
-	// Write parent directories first
-	if err := tarAddDirectories(tw, filepath.Dir(dir), creationTime); err != nil {
-		return err
-	}
-
-	// write the directory header to the tarball archive
-	if err := tw.WriteHeader(&tar.Header{
-		Name:     dir,
-		Typeflag: tar.TypeDir,
-		// Use a fixed Mode, so that this isn't sensitive to the directory and umask
-		// under which it was created. Additionally, windows can only set 0222,
-		// 0444, or 0666, none of which are executable.
-		Mode:    0555,
-		ModTime: creationTime.Time,
-	}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func tarBinary(name, binary string, creationTime v1.Time) (*bytes.Buffer, error) {
+func tarBinary(name, binary string, creationTime v1.Time, platform *v1.Platform) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	tw := tar.NewWriter(buf)
 	defer tw.Close()
 
-	// write the parent directories to the tarball archive
-	if err := tarAddDirectories(tw, path.Dir(name), creationTime); err != nil {
-		return nil, err
+	// Write the parent directories to the tarball archive.
+	// For Windows, the layer must contain a Hives/ directory, and the root
+	// of the actual filesystem goes in a Files/ directory.
+	// For Linux, the binary goes into /ko-app/
+	dirs := []string{"ko-app"}
+	if platform.OS == "windows" {
+		dirs = []string{
+			"Hives",
+			"Files",
+			"Files/ko-app",
+		}
+		name = "Files" + name + ".exe"
+	}
+	for _, dir := range dirs {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     dir,
+			Typeflag: tar.TypeDir,
+			// Use a fixed Mode, so that this isn't sensitive to the directory and umask
+			// under which it was created. Additionally, windows can only set 0222,
+			// 0444, or 0666, none of which are executable.
+			Mode:    0555,
+			ModTime: creationTime.Time,
+		}); err != nil {
+			return nil, fmt.Errorf("writing dir %q: %v", dir, err)
+		}
 	}
 
 	file, err := os.Open(binary)
@@ -471,6 +471,13 @@ func tarBinary(name, binary string, creationTime v1.Time) (*bytes.Buffer, error)
 		// 0444, or 0666, none of which are executable.
 		Mode:    0555,
 		ModTime: creationTime.Time,
+	}
+	if platform.OS == "windows" {
+		// This magic value is for some reason needed for Windows to be
+		// able to execute the binary.
+		header.PAXRecords = map[string]string{
+			"MSWINDOWS.rawsd": userOwnerAndGroupSID,
+		}
 	}
 	// write the header to the tarball archive
 	if err := tw.WriteHeader(header); err != nil {
@@ -501,16 +508,7 @@ const kodataRoot = "/var/run/ko"
 func walkRecursive(tw *tar.Writer, root, chroot string, creationTime v1.Time) error {
 	return filepath.Walk(root, func(hostPath string, info os.FileInfo, err error) error {
 		if hostPath == root {
-			// Add an entry for the root directory of our walk.
-			return tw.WriteHeader(&tar.Header{
-				Name:     chroot,
-				Typeflag: tar.TypeDir,
-				// Use a fixed Mode, so that this isn't sensitive to the directory and umask
-				// under which it was created. Additionally, windows can only set 0222,
-				// 0444, or 0666, none of which are executable.
-				Mode:    0555,
-				ModTime: creationTime.Time,
-			})
+			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("filepath.Walk(%q): %w", root, err)
@@ -563,7 +561,7 @@ func walkRecursive(tw *tar.Writer, root, chroot string, creationTime v1.Time) er
 	})
 }
 
-func (g *gobuild) tarKoData(ref reference) (*bytes.Buffer, error) {
+func (g *gobuild) tarKoData(ref reference, platform *v1.Platform) (*bytes.Buffer, error) {
 	buf := bytes.NewBuffer(nil)
 	tw := tar.NewWriter(buf)
 	defer tw.Close()
@@ -575,7 +573,41 @@ func (g *gobuild) tarKoData(ref reference) (*bytes.Buffer, error) {
 
 	creationTime := g.kodataCreationTime
 
-	return buf, walkRecursive(tw, root, kodataRoot, creationTime)
+	// Write the parent directories to the tarball archive.
+	// For Windows, the layer must contain a Hives/ directory, and the root
+	// of the actual filesystem goes in a Files/ directory.
+	// For Linux, kodata starts at /var/run/ko.
+	chroot := kodataRoot
+	dirs := []string{
+		"/var",
+		"/var/run",
+		"/var/run/ko",
+	}
+	if platform.OS == "windows" {
+		chroot = "Files" + kodataRoot
+		dirs = []string{
+			"Hives",
+			"Files",
+			"Files/var",
+			"Files/var/run",
+			"Files/var/run/ko",
+		}
+	}
+	for _, dir := range dirs {
+		if err := tw.WriteHeader(&tar.Header{
+			Name:     dir,
+			Typeflag: tar.TypeDir,
+			// Use a fixed Mode, so that this isn't sensitive to the directory and umask
+			// under which it was created. Additionally, windows can only set 0222,
+			// 0444, or 0666, none of which are executable.
+			Mode:    0555,
+			ModTime: creationTime.Time,
+		}); err != nil {
+			return nil, fmt.Errorf("writing dir %q: %v", dir, err)
+		}
+	}
+
+	return buf, walkRecursive(tw, root, chroot, creationTime)
 }
 
 func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platform *v1.Platform) (v1.Image, error) {
@@ -601,8 +633,9 @@ func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platfor
 	defer os.RemoveAll(filepath.Dir(file))
 
 	var layers []mutate.Addendum
+
 	// Create a layer from the kodata directory under this import path.
-	dataLayerBuf, err := g.tarKoData(ref)
+	dataLayerBuf, err := g.tarKoData(ref, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -622,10 +655,10 @@ func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platfor
 		},
 	})
 
-	appPath := path.Join(appDir, appFilename(ref.Path()))
+	appPath := path.Join("/ko-app", appFilename(ref.Path()))
 
 	// Construct a tarball with the binary and produce a layer.
-	binaryLayerBuf, err := tarBinary(appPath, file, v1.Time{})
+	binaryLayerBuf, err := tarBinary(appPath, file, v1.Time{}, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -663,8 +696,14 @@ func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platfor
 
 	cfg = cfg.DeepCopy()
 	cfg.Config.Entrypoint = []string{appPath}
-	updatePath(cfg)
-	cfg.Config.Env = append(cfg.Config.Env, "KO_DATA_PATH="+kodataRoot)
+	if platform.OS == "windows" {
+		cfg.Config.Entrypoint = []string{`C:\ko-app\` + appFilename(ref.Path()) + ".exe"}
+		updatePath(cfg, `C:\ko-app`)
+		cfg.Config.Env = append(cfg.Config.Env, `KO_DATA_PATH=C:\var\run\ko`)
+	} else {
+		updatePath(cfg, appPath)
+		cfg.Config.Env = append(cfg.Config.Env, "KO_DATA_PATH="+kodataRoot)
+	}
 	cfg.Author = "github.com/google/ko"
 
 	if cfg.Config.Labels == nil {
@@ -686,9 +725,9 @@ func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platfor
 	return image, nil
 }
 
-// Append appDir to the PATH environment variable, if it exists. Otherwise,
-// set the PATH environment variable to appDir.
-func updatePath(cf *v1.ConfigFile) {
+// Append appPath to the PATH environment variable, if it exists. Otherwise,
+// set the PATH environment variable to appPath.
+func updatePath(cf *v1.ConfigFile, appPath string) {
 	for i, env := range cf.Config.Env {
 		parts := strings.SplitN(env, "=", 2)
 		if len(parts) != 2 {
@@ -697,14 +736,14 @@ func updatePath(cf *v1.ConfigFile) {
 		}
 		key, value := parts[0], parts[1]
 		if key == "PATH" {
-			value = fmt.Sprintf("%s:%s", value, appDir)
+			value = fmt.Sprintf("%s:%s", value, appPath)
 			cf.Config.Env[i] = "PATH=" + value
 			return
 		}
 	}
 
 	// If we get here, we never saw PATH.
-	cf.Config.Env = append(cf.Config.Env, "PATH="+appDir)
+	cf.Config.Env = append(cf.Config.Env, "PATH="+appPath)
 }
 
 // Build implements build.Interface

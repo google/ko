@@ -1,0 +1,34 @@
+name: Basic e2e test
+
+on:
+  pull_request: 
+    branches: ['main']
+
+jobs:
+  e2e:
+    strategy:
+      matrix:
+        platform:
+        - ubuntu-latest
+        - windows-latest
+    name: e2e ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+        with:
+          go-version: 1.16.x
+
+      - name: Build and run ko container
+        env:
+          KO_DOCKER_REPO: ko.local
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+            export KO_DEFAULTBASEIMAGE=mcr.microsoft.com/windows/nanoserver:1809
+            export PLATFORM=windows/amd64
+          else
+            export PLATFORM=linux/amd64
+          fi
+          docker run $(go run ./ publish ./ --platform=${PLATFORM}) version
