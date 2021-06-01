@@ -18,6 +18,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/md5" //nolint: gosec // No strong cryptography needed.
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -303,24 +305,22 @@ func platformToString(p v1.Platform) string {
 	return fmt.Sprintf("%s/%s", p.OS, p.Architecture)
 }
 
+func hashInputs(args []string, env []string) string {
+	filtered := []string{}
+	for _, s := range env {
+		if !strings.HasPrefix(s, "KO") {
+
+			filtered = append(filtered, s)
+		}
+	}
+
+	hasher := md5.New() //nolint: gosec // No strong cryptography needed.
+	hasher.Write([]byte(strings.Join(args, " ") + " " + strings.Join(filtered, " ")))
+
+	return hex.EncodeToString(hasher.Sum(nil))
+}
+
 func build(ctx context.Context, ip string, platform v1.Platform, disableOptimizations bool) (string, error) {
-	tmpDir, err := ioutil.TempDir("", "ko")
-	if err != nil {
-		return "", err
-	}
-	file := filepath.Join(tmpDir, "out")
-
-	args := make([]string, 0, 7)
-	args = append(args, "build")
-	if disableOptimizations {
-		// Disable optimizations (-N) and inlining (-l).
-		args = append(args, "-gcflags", "all=-N -l")
-	}
-	args = append(args, "-o", file)
-	args = addGo113TrimPathFlag(args)
-	args = append(args, ip)
-	cmd := exec.CommandContext(ctx, "go", args...)
-
 	// Last one wins
 	defaultEnv := []string{
 		"CGO_ENABLED=0",
@@ -338,7 +338,35 @@ func build(ctx context.Context, ip string, platform v1.Platform, disableOptimiza
 		}
 	}
 
-	cmd.Env = append(defaultEnv, os.Environ()...)
+	args := make([]string, 0, 7)
+	args = append(args, "build")
+	if disableOptimizations {
+		// Disable optimizations (-N) and inlining (-l).
+		args = append(args, "-gcflags", "all=-N -l")
+	}
+	args = addGo113TrimPathFlag(args)
+
+	defaultEnv = append(defaultEnv, os.Environ()...)
+
+	tmpDir, err := ioutil.TempDir("", "ko")
+	if err != nil {
+		return "", err
+	}
+	if os.Getenv("KO_STABLE_OUTPUT") != "" {
+		hasher := md5.New() //nolint: gosec // No strong cryptography needed.
+		hasher.Write([]byte(strings.Join(args, " ") + " " + strings.Join(defaultEnv, " ")))
+
+		tmpDir = filepath.Join(os.TempDir(), "ko", ip, hashInputs(args, defaultEnv))
+		if err := os.MkdirAll(tmpDir, os.ModePerm); err != nil {
+			return "", err
+		}
+	}
+	file := filepath.Join(tmpDir, "out")
+
+	args = append(args, "-o", file)
+	args = append(args, ip)
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Env = defaultEnv
 
 	var output bytes.Buffer
 	cmd.Stderr = &output
@@ -346,7 +374,9 @@ func build(ctx context.Context, ip string, platform v1.Platform, disableOptimiza
 
 	log.Printf("Building %s for %s", ip, platformToString(platform))
 	if err := cmd.Run(); err != nil {
-		os.RemoveAll(tmpDir)
+		if os.Getenv("KO_STABLE_OUTPUT") == "" {
+			os.RemoveAll(tmpDir)
+		}
 		log.Printf("Unexpected error running \"go build\": %v\n%v", err, output.String())
 		return "", err
 	}
@@ -540,7 +570,9 @@ func (g *gobuild) buildOne(ctx context.Context, s string, base v1.Image, platfor
 	if err != nil {
 		return nil, err
 	}
-	defer os.RemoveAll(filepath.Dir(file))
+	if os.Getenv("KO_STABLE_OUTPUT") == "" {
+		defer os.RemoveAll(filepath.Dir(file))
+	}
 
 	var layers []mutate.Addendum
 	// Create a layer from the kodata directory under this import path.
