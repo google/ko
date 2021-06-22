@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package estargz adapts the containerd estargz package to our abstractions.
 package estargz
 
 import (
@@ -33,7 +34,7 @@ var _ io.ReadCloser = (*estargz.Blob)(nil)
 //  * An error if the estargz processing encountered a problem.
 //
 // Refer to estargz for the options:
-// https://pkg.go.dev/github.com/containerd/stargz-snapshotter@v0.2.0/estargz#Option
+// https://pkg.go.dev/github.com/containerd/stargz-snapshotter/estargz@v0.4.1#Option
 func ReadCloser(r io.ReadCloser, opts ...estargz.Option) (*estargz.Blob, v1.Hash, error) {
 	defer r.Close()
 

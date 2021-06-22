@@ -26,7 +26,10 @@ import (
 
 // NewCmdValidate creates a new cobra.Command for the validate subcommand.
 func NewCmdValidate(options *[]crane.Option) *cobra.Command {
-	var tarballPath, remoteRef string
+	var (
+		tarballPath, remoteRef string
+		fast                   bool
+	)
 
 	validateCmd := &cobra.Command{
 		Use:   "validate",
@@ -45,8 +48,13 @@ func NewCmdValidate(options *[]crane.Option) *cobra.Command {
 					return fmt.Errorf("failed to read image %s: %v", flag, err)
 				}
 
-				if err := validate.Image(img); err != nil {
+				opt := []validate.Option{}
+				if fast {
+					opt = append(opt, validate.Fast)
+				}
+				if err := validate.Image(img, opt...); err != nil {
 					fmt.Printf("FAIL: %s: %v\n", flag, err)
+					return err
 				} else {
 					fmt.Printf("PASS: %s\n", flag)
 				}
@@ -56,6 +64,7 @@ func NewCmdValidate(options *[]crane.Option) *cobra.Command {
 	}
 	validateCmd.Flags().StringVar(&tarballPath, "tarball", "", "Path to tarball to validate")
 	validateCmd.Flags().StringVar(&remoteRef, "remote", "", "Name of remote image to validate")
+	validateCmd.Flags().BoolVar(&fast, "fast", false, "Skip downloading/digesting layers")
 
 	return validateCmd
 }

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package and provides helpers for adding Close to io.{Reader|Writer}.
 package and
 
 import (

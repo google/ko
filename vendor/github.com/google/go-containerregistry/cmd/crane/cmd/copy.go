@@ -24,7 +24,7 @@ func NewCmdCopy(options *[]crane.Option) *cobra.Command {
 	return &cobra.Command{
 		Use:     "copy SRC DST",
 		Aliases: []string{"cp"},
-		Short:   "Efficiently copy a remote image from src to dst",
+		Short:   "Efficiently copy a remote image from src to dst while retaining the digest value",
 		Args:    cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			src, dst := args[0], args[1]

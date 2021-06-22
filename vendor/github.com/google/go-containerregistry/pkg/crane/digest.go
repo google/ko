@@ -39,7 +39,7 @@ func Digest(ref string, opt ...Option) (string, error) {
 		}
 		return digest.String(), nil
 	}
-	desc, err := head(ref, opt...)
+	desc, err := Head(ref, opt...)
 	if err != nil {
 		logs.Warn.Printf("HEAD request failed, falling back on GET: %v", err)
 		rdesc, err := getManifest(ref, opt...)
