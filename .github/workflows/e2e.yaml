@@ -15,20 +15,26 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
-        with:
-          go-version: 1.16.x
+    - uses: actions/checkout@v2
+    - uses: actions/setup-go@v2
+      with:
+        go-version: 1.16.x
 
-      - name: Build and run ko container
-        env:
-          KO_DOCKER_REPO: ko.local
-        shell: bash
-        run: |
-          if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
-            export KO_DEFAULTBASEIMAGE=mcr.microsoft.com/windows/nanoserver:1809
-            export PLATFORM=windows/amd64
-          else
-            export PLATFORM=linux/amd64
-          fi
-          docker run $(go run ./ publish ./ --platform=${PLATFORM}) version
+    - name: Build and run ko container
+      env:
+        KO_DOCKER_REPO: ko.local
+      shell: bash
+      run: |
+        set -euxo pipefail
+
+        if [[ "${{ matrix.platform }}" == "windows-latest" ]]; then
+          export KO_DEFAULTBASEIMAGE=mcr.microsoft.com/windows/nanoserver:1809
+          export PLATFORM=windows/amd64
+        else
+          export PLATFORM=linux/amd64
+        fi
+        # Build and run the ko binary, which should be runnable.
+        docker run $(go run ./ publish ./ --platform=${PLATFORM}) version
+
+        # Build and run the test/ binary, which should log "Hello there" served from KO_DATA_PATH
+        docker run $(go run ./ publish ./test --platform=${PLATFORM}) --wait=false 2>&1 | grep "Hello there"                                                                          
