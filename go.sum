@@ -421,6 +421,8 @@ github.com/google/go-containerregistry v0.5.0 h1:eb9sinv4PKm0AUwQGov0mvIdA4pyBGj
 github.com/google/go-containerregistry v0.5.0/go.mod h1:Ct15B4yir3PLOP5jsy0GNeYVaIZs/MK/Jz5any1wFW0=
 github.com/google/go-containerregistry v0.5.2-0.20210622175925-92e9e85a7f1c h1:gYZwcIX3UVlYlXsu0wgFk6rFaWVuEE8O0YscFnGNPGQ=
 github.com/google/go-containerregistry v0.5.2-0.20210622175925-92e9e85a7f1c/go.mod h1:R5WRYyTdQqTchlBhX4q+WICGh8HQIL5wDFoFZv7Jq6Q=
+github.com/google/go-containerregistry v0.5.2-0.20210622202051-acad0ede73ff h1:ofDPlq1NyfmbTPMTWQenAcA52tkqXTz7CKhQmWi9R9A=
+github.com/google/go-containerregistry v0.5.2-0.20210622202051-acad0ede73ff/go.mod h1:R5WRYyTdQqTchlBhX4q+WICGh8HQIL5wDFoFZv7Jq6Q=
 github.com/google/gofuzz v1.0.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=
 github.com/google/gofuzz v1.1.0 h1:Hsa8mG0dQ46ij8Sl2AYJDUv1oA9/d6Vk+3LG99Oe02g=
 github.com/google/gofuzz v1.1.0/go.mod h1:dBl0BpW6vV/+mYPU4Po3pmUjxk6FQPldtuIdl/M65Eg=

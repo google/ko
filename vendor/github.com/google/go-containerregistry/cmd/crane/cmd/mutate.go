@@ -91,11 +91,7 @@ func NewCmdMutate(options *[]crane.Option) *cobra.Command {
 				log.Fatalf("mutating config: %v", err)
 			}
 
-			// Mutate and write image.
-			img, err = mutate.Annotations(img, annotations)
-			if err != nil {
-				log.Fatalf("mutating annotations: %v", err)
-			}
+			img = mutate.Annotations(img, annotations)
 
 			// If the new ref isn't provided, write over the original image.
 			// If that ref was provided by digest (e.g., output from

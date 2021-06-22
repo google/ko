@@ -665,14 +665,10 @@ func (g *gobuild) buildOne(ctx context.Context, refStr string, baseRef name.Refe
 		return nil, err
 	}
 
-	m := map[string]string{
+	withApp = mutate.Annotations(withApp, map[string]string{
 		baseRefAnnotation:    baseRef.Name(),
 		baseDigestAnnotation: baseDigest.String(),
-	}
-	withApp, err = mutate.Annotations(withApp, m)
-	if err != nil {
-		return nil, err
-	}
+	})
 
 	// Start from a copy of the base image's config file, and set
 	// the entrypoint to our app.
