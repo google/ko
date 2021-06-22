@@ -669,7 +669,6 @@ func (g *gobuild) buildOne(ctx context.Context, refStr string, baseRef name.Refe
 		baseRefAnnotation:    baseRef.Name(),
 		baseDigestAnnotation: baseDigest.String(),
 	}
-	log.Println("DEBUGGING ANNOTATIONS:", m) // TODO remove
 	withApp, err = mutate.Annotations(withApp, m)
 	if err != nil {
 		return nil, err
