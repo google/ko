@@ -35,10 +35,12 @@ const (
 )
 
 // demon is intentionally misspelled to avoid name collision (and drive Jon nuts).
+// [Narrator: Jon wasn't the only one driven nuts.]
 type demon struct {
-	base  string
-	namer Namer
-	tags  []string
+	base   string
+	client daemon.Client
+	namer  Namer
+	tags   []string
 }
 
 // DaemonOption is a functional option for NewDaemon.
@@ -49,6 +51,16 @@ func WithLocalDomain(domain string) DaemonOption {
 	return func(i *demon) error {
 		if domain != "" {
 			i.base = domain
+		}
+		return nil
+	}
+}
+
+// WithDockerClient is a functional option for overriding the docker client.
+func WithDockerClient(client daemon.Client) DaemonOption {
+	return func(i *demon) error {
+		if client != nil {
+			i.client = client
 		}
 		return nil
 	}
@@ -69,9 +81,11 @@ func NewDaemon(namer Namer, tags []string, opts ...DaemonOption) (Interface, err
 	return d, nil
 }
 
-// getOpts returns daemon.Options. It's a var to allow it to be overridden during tests.
-var getOpts = func(ctx context.Context) []daemon.Option {
-	return []daemon.Option{daemon.WithContext(ctx)}
+func (d *demon) getOpts(ctx context.Context) []daemon.Option {
+	return []daemon.Option{
+		daemon.WithContext(ctx),
+		daemon.WithClient(d.client),
+	}
 }
 
 // Publish implements publish.Interface
@@ -131,7 +145,7 @@ func (d *demon) Publish(ctx context.Context, br build.Result, s string) (name.Re
 	}
 
 	log.Printf("Loading %v", digestTag)
-	if _, err := daemon.Write(digestTag, img, getOpts(ctx)...); err != nil {
+	if _, err := daemon.Write(digestTag, img, d.getOpts(ctx)...); err != nil {
 		return nil, err
 	}
 	log.Printf("Loaded %v", digestTag)
@@ -143,7 +157,7 @@ func (d *demon) Publish(ctx context.Context, br build.Result, s string) (name.Re
 			return nil, err
 		}
 
-		if err := daemon.Tag(digestTag, tag, getOpts(ctx)...); err != nil {
+		if err := daemon.Tag(digestTag, tag, d.getOpts(ctx)...); err != nil {
 			return nil, err
 		}
 		log.Printf("Added tag %v", tagName)

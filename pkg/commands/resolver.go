@@ -164,7 +164,9 @@ func makePublisher(po *options.PublishOptions) (publish.Interface, error) {
 			// use local with other publishers, but that might
 			// not be true.
 			return publish.NewDaemon(namer, po.Tags,
-				publish.WithLocalDomain(po.LocalDomain))
+				publish.WithDockerClient(po.DockerClient),
+				publish.WithLocalDomain(po.LocalDomain),
+			)
 		}
 		if repoName == publish.KindDomain {
 			return publish.NewKindPublisher(namer, po.Tags), nil

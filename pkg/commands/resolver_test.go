@@ -22,13 +22,16 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"path"
 	"strings"
 	"testing"
 
+	"github.com/docker/docker/api/types"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/random"
 	"github.com/google/ko/pkg/build"
@@ -52,7 +55,22 @@ var (
 		fooRef: fooHash,
 		barRef: barHash,
 	}
+
+	errImageLoad = fmt.Errorf("ImageLoad() error")
+	errImageTag  = fmt.Errorf("ImageTag() error")
 )
+
+type erroringClient struct {
+	daemon.Client
+}
+
+func (m *erroringClient) NegotiateAPIVersion(context.Context) {}
+func (m *erroringClient) ImageLoad(context.Context, io.Reader, bool) (types.ImageLoadResponse, error) {
+	return types.ImageLoadResponse{}, errImageLoad
+}
+func (m *erroringClient) ImageTag(_ context.Context, _ string, _ string) error {
+	return errImageTag
+}
 
 func TestResolveMultiDocumentYAMLs(t *testing.T) {
 	refs := []string{fooRef, barRef}
@@ -138,14 +156,14 @@ kind: Bar
 	}
 }
 
-func TestMakeBuilder(t *testing.T) {
+func TestNewBuilderCanBuild(t *testing.T) {
 	ctx := context.Background()
 	bo := &options.BuildOptions{
 		ConcurrentBuilds: 1,
 	}
 	builder, err := NewBuilder(ctx, bo)
 	if err != nil {
-		t.Fatalf("MakeBuilder(): %v", err)
+		t.Fatalf("NewBuilder(): %v", err)
 	}
 	res, err := builder.Build(ctx, "ko://github.com/google/ko/test")
 	if err != nil {
@@ -158,29 +176,74 @@ func TestMakeBuilder(t *testing.T) {
 	fmt.Println(gotDigest.String())
 }
 
-func TestMakePublisher(t *testing.T) {
-	repo := "registry.example.com/repository"
-	po := &options.PublishOptions{
-		DockerRepo:          repo,
-		PreserveImportPaths: true,
-	}
-	publisher, err := NewPublisher(po)
-	if err != nil {
-		t.Fatalf("MakePublisher(): %v", err)
-	}
-	defer publisher.Close()
-	ctx := context.Background()
+func TestNewPublisherCanPublish(t *testing.T) {
+	dockerRepo := "registry.example.com/repo"
+	localDomain := "localdomain.example.com/repo"
 	importpath := "github.com/google/ko/test"
-	importpathWithScheme := build.StrictScheme + importpath
-	buildResult := empty.Index
-	ref, err := publisher.Publish(ctx, buildResult, importpathWithScheme)
-	if err != nil {
-		t.Fatalf("publisher.Publish(): %v", err)
+	tests := []struct {
+		description   string
+		wantImageName string
+		po            *options.PublishOptions
+		shouldError   bool
+		wantError     error
+	}{
+		{
+			description:   "base import path",
+			wantImageName: fmt.Sprintf("%s/%s", dockerRepo, path.Base(importpath)),
+			po: &options.PublishOptions{
+				BaseImportPaths: true,
+				DockerRepo:      dockerRepo,
+			},
+		},
+		{
+			description:   "preserve import path",
+			wantImageName: fmt.Sprintf("%s/%s", dockerRepo, importpath),
+			po: &options.PublishOptions{
+				DockerRepo:          dockerRepo,
+				PreserveImportPaths: true,
+			},
+		},
+		{
+			description:   "override LocalDomain",
+			wantImageName: fmt.Sprintf("%s/%s", localDomain, importpath),
+			po: &options.PublishOptions{
+				Local:               true,
+				LocalDomain:         localDomain,
+				PreserveImportPaths: true,
+			},
+		},
+		{
+			description:   "override DockerClient",
+			wantImageName: strings.ToLower(fmt.Sprintf("%s/%s", localDomain, importpath)),
+			po: &options.PublishOptions{
+				DockerClient: &erroringClient{},
+				Local:        true,
+			},
+			shouldError: true,
+			wantError:   errImageLoad,
+		},
 	}
-	gotImageName := ref.Context().Name()
-	wantImageName := strings.ToLower(fmt.Sprintf("%s/%s", repo, importpath))
-	if gotImageName != wantImageName {
-		t.Errorf("got %s, wanted %s", gotImageName, wantImageName)
+	for _, test := range tests {
+		publisher, err := NewPublisher(test.po)
+		if err != nil {
+			t.Fatalf("%s: NewPublisher(): %v", test.description, err)
+		}
+		defer publisher.Close()
+		ref, err := publisher.Publish(context.Background(), empty.Image, build.StrictScheme+importpath)
+		if test.shouldError {
+			if err == nil || !strings.HasSuffix(err.Error(), test.wantError.Error()) {
+				t.Errorf("%s: got error %v, wanted %v", test.description, err, test.wantError)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: publisher.Publish(): %v", test.description, err)
+		}
+		fmt.Printf("ref: %+v\n", ref)
+		gotImageName := ref.Context().Name()
+		if gotImageName != test.wantImageName {
+			t.Errorf("%s: got %s, wanted %s", test.description, gotImageName, test.wantImageName)
+		}
 	}
 }
 

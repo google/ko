@@ -46,15 +46,6 @@ func (m *mockClient) ImageTag(_ context.Context, _ string, tag string) error {
 
 var Tags []string
 
-func init() {
-	getOpts = func(ctx context.Context) []daemon.Option {
-		return []daemon.Option{
-			daemon.WithContext(ctx),
-			daemon.WithClient(&mockClient{}),
-		}
-	}
-}
-
 func TestDaemon(t *testing.T) {
 	importpath := "github.com/google/ko"
 	img, err := random.Image(1024, 1)
@@ -62,7 +53,7 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("random.Image() = %v", err)
 	}
 
-	def, err := NewDaemon(md5Hash, []string{})
+	def, err := NewDaemon(md5Hash, []string{}, WithDockerClient(&mockClient{}))
 	if err != nil {
 		t.Fatalf("NewDaemon() = %v", err)
 	}
@@ -83,7 +74,7 @@ func TestDaemonTags(t *testing.T) {
 		t.Fatalf("random.Image() = %v", err)
 	}
 
-	def, err := NewDaemon(md5Hash, []string{"v2.0.0", "v1.2.3", "production"})
+	def, err := NewDaemon(md5Hash, []string{"v2.0.0", "v1.2.3", "production"}, WithDockerClient(&mockClient{}))
 	if err != nil {
 		t.Fatalf("NewDaemon() = %v", err)
 	}
@@ -113,7 +104,7 @@ func TestDaemonDomain(t *testing.T) {
 	}
 
 	localDomain := "registry.example.com/repository"
-	def, err := NewDaemon(md5Hash, []string{}, WithLocalDomain(localDomain))
+	def, err := NewDaemon(md5Hash, []string{}, WithLocalDomain(localDomain), WithDockerClient(&mockClient{}))
 	if err != nil {
 		t.Fatalf("NewDaemon() = %v", err)
 	}

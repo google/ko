@@ -22,6 +22,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/google/go-containerregistry/pkg/v1/daemon"
 	"github.com/google/ko/pkg/publish"
 	"github.com/spf13/cobra"
 )
@@ -38,6 +39,11 @@ type PublishOptions struct {
 	// UserAgent enables overriding the default value of the `User-Agent` HTTP
 	// request header used when pushing the built image to an image registry.
 	UserAgent string
+
+	// DockerClient enables overriding the default docker client when embedding
+	// ko as a module in other tools.
+	// If left as the zero value, ko uses github.com/docker/docker/client.FromEnv
+	DockerClient daemon.Client
 
 	Tags []string
 	// TagOnly resolves images into tag-only references.
