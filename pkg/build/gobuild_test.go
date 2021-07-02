@@ -455,7 +455,7 @@ func validateImage(t *testing.T, img v1.Image, baseLayers int64, creationTime v1
 				pathValue := strings.TrimPrefix(envVar, "PATH=")
 				pathEntries := strings.Split(pathValue, ":")
 				for _, pathEntry := range pathEntries {
-					if pathEntry == appDir {
+					if pathEntry == "/ko-app/test" {
 						found = true
 					}
 				}
