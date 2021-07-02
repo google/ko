@@ -45,7 +45,7 @@ brew install ko
 With Go 1.16+, build and install the latest released version:
 
 ```
-go install github.com/google/ko
+go install github.com/google/ko@latest
 ```
 
 ## Authenticate
